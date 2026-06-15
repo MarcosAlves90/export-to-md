@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
-from pathlib import Path
+"""Export a source directory to Markdown files optimized for LLM review."""
+
+from __future__ import annotations
+
 import argparse
-import mimetypes
 import hashlib
+import mimetypes
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
 import pathspec
 
 DEFAULT_MAX_FILE_SIZE_MB = 2
 DEFAULT_MAX_COMBINED_SIZE_MB = 10
+BYTES_PER_MB = 1024 * 1024
+HASH_CHUNK_SIZE = 1024 * 1024
+TEXT_SAMPLE_SIZE = 4096
 
 TEXT_EXTENSIONS = {
     ".txt", ".md", ".markdown", ".py", ".js", ".jsx", ".ts", ".tsx",
@@ -15,43 +25,99 @@ TEXT_EXTENSIONS = {
     ".fish", ".ps1", ".bat", ".cmd", ".html", ".css", ".scss", ".sass",
     ".json", ".yaml", ".yml", ".toml", ".xml", ".ini", ".env", ".example",
     ".gitignore", ".dockerignore", ".sql", ".graphql", ".gql", ".prisma",
-    ".gradle", ".properties", ".csv", ".tsv", ".lock"
+    ".gradle", ".properties", ".csv", ".tsv", ".lock",
 }
 
 LIKELY_BINARY_EXTENSIONS = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip",
     ".tar", ".gz", ".rar", ".7z", ".exe", ".dll", ".so", ".dylib",
     ".mp4", ".mov", ".avi", ".mp3", ".wav", ".flac", ".woff", ".woff2",
-    ".ttf", ".otf", ".class", ".jar", ".bin"
+    ".ttf", ".otf", ".class", ".jar", ".bin",
 }
 
-def load_gitignore(root: Path):
+LANGUAGE_ALIASES = {
+    "py": "python",
+    "js": "javascript",
+    "jsx": "jsx",
+    "ts": "typescript",
+    "tsx": "tsx",
+    "java": "java",
+    "kt": "kotlin",
+    "go": "go",
+    "rs": "rust",
+    "sh": "bash",
+    "bash": "bash",
+    "zsh": "zsh",
+    "html": "html",
+    "css": "css",
+    "scss": "scss",
+    "json": "json",
+    "yaml": "yaml",
+    "yml": "yaml",
+    "toml": "toml",
+    "xml": "xml",
+    "sql": "sql",
+    "md": "markdown",
+}
+
+
+@dataclass(frozen=True)
+class ExportConfig:
+    root: Path
+    output_dir: Path
+    max_file_size_bytes: int
+    max_combined_size_bytes: int
+    consolidated: bool
+
+
+@dataclass
+class ExtensionStats:
+    count: int = 0
+    bytes: int = 0
+
+
+def load_gitignore(root: Path) -> pathspec.PathSpec:
     gitignore = root / ".gitignore"
 
     if not gitignore.exists():
         return pathspec.PathSpec.from_lines("gitwildmatch", [])
 
-    return pathspec.PathSpec.from_lines(
-        "gitwildmatch",
-        gitignore.read_text(encoding="utf-8", errors="ignore").splitlines()
-    )
+    lines = gitignore.read_text(encoding="utf-8", errors="ignore").splitlines()
+    return pathspec.PathSpec.from_lines("gitwildmatch", lines)
 
-def is_ignored(path: Path, root: Path, spec) -> bool:
+
+def is_ignored(path: Path, root: Path, spec: pathspec.PathSpec) -> bool:
     if ".git" in path.parts:
         return True
 
-    rel = path.relative_to(root).as_posix()
+    try:
+        relative_path = path.relative_to(root).as_posix()
+    except ValueError:
+        return False
 
-    return spec.match_file(rel)
+    return spec.match_file(relative_path)
+
+
+def is_descendant_or_same(path: Path, parent: Path) -> bool:
+    return path == parent or parent in path.parents
+
+
+def is_inside_output_dir(path: Path, output_dir: Path | None) -> bool:
+    if output_dir is None:
+        return False
+
+    return is_descendant_or_same(path.resolve(), output_dir.resolve())
+
 
 def sha256_file(path: Path) -> str:
     hasher = hashlib.sha256()
 
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(HASH_CHUNK_SIZE), b""):
             hasher.update(chunk)
 
     return hasher.hexdigest()
+
 
 def is_probably_text(path: Path) -> bool:
     suffix = path.suffix.lower()
@@ -63,8 +129,8 @@ def is_probably_text(path: Path) -> bool:
         return True
 
     try:
-        sample = path.read_bytes()[:4096]
-    except Exception:
+        sample = path.read_bytes()[:TEXT_SAMPLE_SIZE]
+    except OSError:
         return False
 
     if b"\x00" in sample:
@@ -72,111 +138,91 @@ def is_probably_text(path: Path) -> bool:
 
     try:
         sample.decode("utf-8")
-        return True
     except UnicodeDecodeError:
         return False
+
+    return True
+
 
 def read_text_file(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
         return path.read_text(encoding="utf-8", errors="replace")
-    except Exception as e:
-        return f"[ERRO AO LER ARQUIVO: {e}]"
+    except OSError as error:
+        return f"[ERRO AO LER ARQUIVO: {error}]"
 
-def collect_visible_paths(root: Path, spec):
-    paths = []
+
+def collect_visible_paths(root: Path, spec: pathspec.PathSpec, output_dir: Path) -> list[Path]:
+    paths: list[Path] = []
 
     for path in root.rglob("*"):
-        if is_ignored(path, root, spec):
+        if is_inside_output_dir(path, output_dir) or is_ignored(path, root, spec):
             continue
 
         paths.append(path)
 
     return paths
 
-def is_inside_output_dir(path: Path, output_dir: Path | None) -> bool:
-    if output_dir is None:
-        return False
 
-    resolved_path = path.resolve()
-    resolved_output_dir = output_dir.resolve()
+def get_visible_children(
+    current: Path,
+    root: Path,
+    spec: pathspec.PathSpec,
+    output_dir: Path | None,
+) -> list[Path]:
+    try:
+        items = current.iterdir()
+    except OSError:
+        return []
 
-    return resolved_path == resolved_output_dir or resolved_output_dir in resolved_path.parents
-
-def get_visible_children(current: Path, root: Path, spec, output_dir: Path | None) -> list[Path]:
-    items = sorted(current.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+    sorted_items = sorted(items, key=lambda path: (path.is_file(), path.name.lower()))
 
     return [
         item
-        for item in items
+        for item in sorted_items
         if not is_inside_output_dir(item, output_dir) and not is_ignored(item, root, spec)
     ]
+
 
 def append_tree_lines(
     current: Path,
     root: Path,
-    spec,
+    spec: pathspec.PathSpec,
     output_dir: Path | None,
     lines: list[str],
     prefix: str = "",
 ) -> None:
-    visible = get_visible_children(current, root, spec, output_dir)
+    visible_items = get_visible_children(current, root, spec, output_dir)
 
-    for index, item in enumerate(visible):
-        last = index == len(visible) - 1
-        connector = "└── " if last else "├── "
+    for index, item in enumerate(visible_items):
+        is_last = index == len(visible_items) - 1
+        connector = "└── " if is_last else "├── "
         lines.append(prefix + connector + item.name)
 
         if item.is_dir():
-            next_prefix = prefix + ("    " if last else "│   ")
+            next_prefix = prefix + ("    " if is_last else "│   ")
             append_tree_lines(item, root, spec, output_dir, lines, next_prefix)
 
-def generate_tree(root: Path, spec, output_dir: Path | None = None) -> str:
+
+def generate_tree(root: Path, spec: pathspec.PathSpec, output_dir: Path | None = None) -> str:
     lines = [f"{root.name}/"]
     append_tree_lines(root, root, spec, output_dir, lines)
     return "\n".join(lines)
 
+
 def get_language_hint(path: Path) -> str:
     suffix = path.suffix.lower().lstrip(".")
+    return LANGUAGE_ALIASES.get(suffix, "text")
 
-    aliases = {
-        "py": "python",
-        "js": "javascript",
-        "jsx": "jsx",
-        "ts": "typescript",
-        "tsx": "tsx",
-        "java": "java",
-        "kt": "kotlin",
-        "go": "go",
-        "rs": "rust",
-        "sh": "bash",
-        "bash": "bash",
-        "zsh": "zsh",
-        "html": "html",
-        "css": "css",
-        "scss": "scss",
-        "json": "json",
-        "yaml": "yaml",
-        "yml": "yaml",
-        "toml": "toml",
-        "xml": "xml",
-        "sql": "sql",
-        "md": "markdown",
-    }
 
-    return aliases.get(suffix, "text")
-
-def write_file_markdown(source_file: Path, root: Path, output_dir: Path, max_file_size_bytes: int):
+def build_file_metadata(source_file: Path, root: Path) -> str:
     relative_path = source_file.relative_to(root)
-    output_file = output_dir / relative_path.parent / f"{relative_path.name}.md"
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-
     size = source_file.stat().st_size
     mime_type, _ = mimetypes.guess_type(source_file.name)
     digest = sha256_file(source_file)
 
-    metadata = f"""# Caminho
+    return f"""# Caminho
 
 `{relative_path.as_posix()}`
 
@@ -187,23 +233,28 @@ def write_file_markdown(source_file: Path, root: Path, output_dir: Path, max_fil
 - SHA-256: `{digest}`
 """
 
+
+def build_file_body(source_file: Path, max_file_size_bytes: int) -> str:
+    size = source_file.stat().st_size
+
     if size > max_file_size_bytes:
-        body = f"""
+        return f"""
 # Conteúdo
 
 Arquivo omitido porque ultrapassa o limite configurado de `{max_file_size_bytes}` bytes.
 """
-    elif not is_probably_text(source_file):
-        body = """
+
+    if not is_probably_text(source_file):
+        return """
 # Conteúdo
 
 Arquivo provavelmente binário. Conteúdo bruto omitido.
 """
-    else:
-        content = read_text_file(source_file)
-        language = get_language_hint(source_file)
 
-        body = f"""
+    content = read_text_file(source_file)
+    language = get_language_hint(source_file)
+
+    return f"""
 # Conteúdo
 
 ```{language}
@@ -211,35 +262,54 @@ Arquivo provavelmente binário. Conteúdo bruto omitido.
 ```
 """
 
-    output_file.write_text(metadata + body, encoding="utf-8")
+
+def write_file_markdown(
+    source_file: Path,
+    root: Path,
+    output_dir: Path,
+    max_file_size_bytes: int,
+) -> None:
+    relative_path = source_file.relative_to(root)
+    output_file = output_dir / relative_path.parent / f"{relative_path.name}.md"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    output_file.write_text(
+        build_file_metadata(source_file, root) + build_file_body(source_file, max_file_size_bytes),
+        encoding="utf-8",
+    )
+
+
+def update_extension_stats(stats: dict[str, ExtensionStats], file: Path) -> None:
+    extension = file.suffix.lower() or "[sem extensão]"
+    file_stats = stats.setdefault(extension, ExtensionStats())
+    file_stats.count += 1
+    file_stats.bytes += file.stat().st_size
+
 
 def build_summary(files: list[Path]) -> str:
-    total_files = len([f for f in files if f.is_file()])
-    total_dirs = len([f for f in files if f.is_dir()])
-    total_bytes = sum(f.stat().st_size for f in files if f.is_file())
+    file_paths = [path for path in files if path.is_file()]
+    directory_paths = [path for path in files if path.is_dir()]
+    total_bytes = sum(path.stat().st_size for path in file_paths)
 
-    by_extension = {}
+    by_extension: dict[str, ExtensionStats] = {}
 
-    for file in files:
-        if not file.is_file():
-            continue
-
-        ext = file.suffix.lower() or "[sem extensão]"
-        by_extension.setdefault(ext, {"count": 0, "bytes": 0})
-        by_extension[ext]["count"] += 1
-        by_extension[ext]["bytes"] += file.stat().st_size
+    for file in file_paths:
+        update_extension_stats(by_extension, file)
 
     rows = "\n".join(
-        f"| `{ext}` | {data['count']} | {data['bytes']} |"
-        for ext, data in sorted(by_extension.items(), key=lambda item: (-item[1]["count"], item[0]))
+        f"| `{extension}` | {stats.count} | {stats.bytes} |"
+        for extension, stats in sorted(
+            by_extension.items(),
+            key=lambda item: (-item[1].count, item[0]),
+        )
     )
 
     return f"""# Resumo do Projeto
 
 ## Totais
 
-- Diretórios: `{total_dirs}`
-- Arquivos: `{total_files}`
+- Diretórios: `{len(directory_paths)}`
+- Arquivos: `{len(file_paths)}`
 - Tamanho total analisado: `{total_bytes}` bytes
 
 ## Arquivos por extensão
@@ -249,21 +319,35 @@ def build_summary(files: list[Path]) -> str:
 {rows}
 """
 
-def build_project_context(root: Path, files: list[Path], spec, max_combined_size_bytes: int) -> str:
+
+def sorted_files(files: list[Path], root: Path) -> list[Path]:
+    return sorted(
+        [path for path in files if path.is_file()],
+        key=lambda path: path.relative_to(root).as_posix(),
+    )
+
+
+def build_project_context(
+    root: Path,
+    files: list[Path],
+    spec: pathspec.PathSpec,
+    output_dir: Path,
+    max_combined_size_bytes: int,
+) -> str:
     parts = [
         "# Contexto Consolidado do Projeto",
         "",
         "## Estrutura",
         "",
         "```text",
-        generate_tree(root, spec),
+        generate_tree(root, spec, output_dir),
         "```",
-        ""
+        "",
     ]
 
     used_bytes = 0
 
-    for file in sorted([f for f in files if f.is_file()], key=lambda p: p.relative_to(root).as_posix()):
+    for file in sorted_files(files, root):
         if not is_probably_text(file):
             continue
 
@@ -271,12 +355,16 @@ def build_project_context(root: Path, files: list[Path], spec, max_combined_size
         encoded_size = len(content.encode("utf-8", errors="replace"))
 
         if used_bytes + encoded_size > max_combined_size_bytes:
+            relative_path = file.relative_to(root).as_posix()
             parts.extend([
                 "",
                 "## Limite atingido",
                 "",
-                f"O arquivo `{file.relative_to(root).as_posix()}` e os próximos foram omitidos porque o limite consolidado foi atingido.",
-                ""
+                (
+                    f"O arquivo `{relative_path}` e os próximos foram omitidos "
+                    "porque o limite consolidado foi atingido."
+                ),
+                "",
             ])
             break
 
@@ -290,20 +378,24 @@ def build_project_context(root: Path, files: list[Path], spec, max_combined_size
             f"```{language}",
             content,
             "```",
-            ""
+            "",
         ])
 
     return "\n".join(parts)
 
-def export_directory_to_markdown(
-    root: Path,
-    output_dir: Path,
-    max_file_size_mb: int,
-    max_combined_size_mb: int,
-    consolidated: bool,
-):
-    root = root.resolve()
-    output_dir = output_dir.resolve()
+
+def build_tree_markdown(root: Path, spec: pathspec.PathSpec, output_dir: Path) -> str:
+    return f"""# Estrutura do Projeto
+
+```text
+{generate_tree(root, spec, output_dir)}
+```
+"""
+
+
+def validate_export_config(config: ExportConfig) -> ExportConfig:
+    root = config.root.resolve()
+    output_dir = config.output_dir.resolve()
 
     if not root.exists():
         raise FileNotFoundError(f"Pasta não encontrada: {root}")
@@ -311,85 +403,127 @@ def export_directory_to_markdown(
     if not root.is_dir():
         raise NotADirectoryError(f"O caminho informado não é uma pasta: {root}")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if root == output_dir:
+        raise ValueError("A pasta de saída não pode ser igual à pasta de origem.")
 
-    spec = load_gitignore(root)
+    return ExportConfig(
+        root=root,
+        output_dir=output_dir,
+        max_file_size_bytes=config.max_file_size_bytes,
+        max_combined_size_bytes=config.max_combined_size_bytes,
+        consolidated=config.consolidated,
+    )
 
-    visible_paths = []
-    for path in collect_visible_paths(root, spec):
-        if path == output_dir or output_dir in path.parents:
-            continue
 
-        visible_paths.append(path)
+def export_directory_to_markdown(config: ExportConfig) -> None:
+    config = validate_export_config(config)
+    config.output_dir.mkdir(parents=True, exist_ok=True)
 
-    tree_md = f"""# Estrutura do Projeto
+    spec = load_gitignore(config.root)
+    visible_paths = collect_visible_paths(config.root, spec, config.output_dir)
 
-```text
-{generate_tree(root, spec, output_dir)}
-```
-"""
-
-    (output_dir / "TREE.md").write_text(tree_md, encoding="utf-8")
-    (output_dir / "SUMMARY.md").write_text(build_summary(visible_paths), encoding="utf-8")
-
-    max_file_size_bytes = max_file_size_mb * 1024 * 1024
-    max_combined_size_bytes = max_combined_size_mb * 1024 * 1024
+    (config.output_dir / "TREE.md").write_text(
+        build_tree_markdown(config.root, spec, config.output_dir),
+        encoding="utf-8",
+    )
+    (config.output_dir / "SUMMARY.md").write_text(
+        build_summary(visible_paths),
+        encoding="utf-8",
+    )
 
     for path in visible_paths:
         if path.is_file():
-            write_file_markdown(path, root, output_dir, max_file_size_bytes)
+            write_file_markdown(path, config.root, config.output_dir, config.max_file_size_bytes)
 
-    if consolidated:
-        (output_dir / "PROJECT_CONTEXT.md").write_text(
-            build_project_context(root, [p for p in visible_paths if p.is_file()], spec, max_combined_size_bytes),
-            encoding="utf-8"
+    if config.consolidated:
+        (config.output_dir / "PROJECT_CONTEXT.md").write_text(
+            build_project_context(
+                config.root,
+                visible_paths,
+                spec,
+                config.output_dir,
+                config.max_combined_size_bytes,
+            ),
+            encoding="utf-8",
         )
 
-def main():
+
+def positive_int(value: str) -> int:
+    try:
+        parsed_value = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("deve ser um número inteiro") from error
+
+    if parsed_value <= 0:
+        raise argparse.ArgumentTypeError("deve ser maior que zero")
+
+    return parsed_value
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Exporta uma pasta para Markdown preservando estrutura, árvore, resumo e contexto consolidado."
+        description=(
+            "Exporta uma pasta para Markdown preservando estrutura, árvore, "
+            "resumo e contexto consolidado."
+        )
     )
 
-    parser.add_argument("folder", help="Pasta que será analisada")
+    parser.add_argument("folder", type=Path, help="Pasta que será analisada")
 
     parser.add_argument(
         "-o",
         "--output",
-        default="markdown_export",
-        help="Pasta onde os arquivos .md serão criados"
+        type=Path,
+        default=Path("markdown_export"),
+        help="Pasta onde os arquivos .md serão criados",
     )
 
     parser.add_argument(
         "--max-file-size-mb",
-        type=int,
+        type=positive_int,
         default=DEFAULT_MAX_FILE_SIZE_MB,
-        help="Tamanho máximo de arquivo individual para incluir conteúdo bruto"
+        help="Tamanho máximo de arquivo individual para incluir conteúdo bruto",
     )
 
     parser.add_argument(
         "--max-combined-size-mb",
-        type=int,
+        type=positive_int,
         default=DEFAULT_MAX_COMBINED_SIZE_MB,
-        help="Tamanho máximo do PROJECT_CONTEXT.md consolidado"
+        help="Tamanho máximo do PROJECT_CONTEXT.md consolidado",
     )
 
     parser.add_argument(
         "--no-consolidated",
         action="store_true",
-        help="Não gera PROJECT_CONTEXT.md"
+        help="Não gera PROJECT_CONTEXT.md",
     )
 
-    args = parser.parse_args()
+    return parser.parse_args(argv)
 
-    export_directory_to_markdown(
-        root=Path(args.folder),
-        output_dir=Path(args.output),
-        max_file_size_mb=args.max_file_size_mb,
-        max_combined_size_mb=args.max_combined_size_mb,
+
+def config_from_args(args: argparse.Namespace) -> ExportConfig:
+    return ExportConfig(
+        root=args.folder,
+        output_dir=args.output,
+        max_file_size_bytes=args.max_file_size_mb * BYTES_PER_MB,
+        max_combined_size_bytes=args.max_combined_size_mb * BYTES_PER_MB,
         consolidated=not args.no_consolidated,
     )
 
-    print(f"Exportação concluída em: {Path(args.output).resolve()}")
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    config = config_from_args(args)
+
+    try:
+        export_directory_to_markdown(config)
+    except (OSError, ValueError) as error:
+        print(f"Erro: {error}", file=sys.stderr)
+        return 1
+
+    print(f"Exportação concluída em: {config.output_dir.resolve()}")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
