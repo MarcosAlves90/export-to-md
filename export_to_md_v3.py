@@ -150,7 +150,7 @@ def read_text_file(path: Path) -> str:
     except UnicodeDecodeError:
         return path.read_text(encoding="utf-8", errors="replace")
     except OSError as error:
-        return f"[ERRO AO LER ARQUIVO: {error}]"
+        return f"[ERROR READING FILE: {error}]"
 
 
 def collect_visible_paths(root: Path, spec: pathspec.PathSpec, output_dir: Path) -> list[Path]:
@@ -222,14 +222,14 @@ def build_file_metadata(source_file: Path, root: Path) -> str:
     mime_type, _ = mimetypes.guess_type(source_file.name)
     digest = sha256_file(source_file)
 
-    return f"""# Caminho
+    return f"""# Path
 
 `{relative_path.as_posix()}`
 
-# Metadados
+# Metadata
 
-- Tamanho: `{size}` bytes
-- MIME estimado: `{mime_type or "desconhecido"}`
+- Size: `{size}` bytes
+- Estimated MIME: `{mime_type or "unknown"}`
 - SHA-256: `{digest}`
 """
 
@@ -239,23 +239,23 @@ def build_file_body(source_file: Path, max_file_size_bytes: int) -> str:
 
     if size > max_file_size_bytes:
         return f"""
-# Conteúdo
+# Content
 
-Arquivo omitido porque ultrapassa o limite configurado de `{max_file_size_bytes}` bytes.
+File omitted because it exceeds the configured limit of `{max_file_size_bytes}` bytes.
 """
 
     if not is_probably_text(source_file):
         return """
-# Conteúdo
+# Content
 
-Arquivo provavelmente binário. Conteúdo bruto omitido.
+File is probably binary. Raw content omitted.
 """
 
     content = read_text_file(source_file)
     language = get_language_hint(source_file)
 
     return f"""
-# Conteúdo
+# Content
 
 ```{language}
 {content}
@@ -280,7 +280,7 @@ def write_file_markdown(
 
 
 def update_extension_stats(stats: dict[str, ExtensionStats], file: Path) -> None:
-    extension = file.suffix.lower() or "[sem extensão]"
+    extension = file.suffix.lower() or "[no extension]"
     file_stats = stats.setdefault(extension, ExtensionStats())
     file_stats.count += 1
     file_stats.bytes += file.stat().st_size
@@ -304,17 +304,17 @@ def build_summary(files: list[Path]) -> str:
         )
     )
 
-    return f"""# Resumo do Projeto
+    return f"""# Project Summary
 
-## Totais
+## Totals
 
-- Diretórios: `{len(directory_paths)}`
-- Arquivos: `{len(file_paths)}`
-- Tamanho total analisado: `{total_bytes}` bytes
+- Directories: `{len(directory_paths)}`
+- Files: `{len(file_paths)}`
+- Total analyzed size: `{total_bytes}` bytes
 
-## Arquivos por extensão
+## Files by Extension
 
-| Extensão | Quantidade | Bytes |
+| Extension | Count | Bytes |
 |---|---:|---:|
 {rows}
 """
@@ -335,9 +335,9 @@ def build_project_context(
     max_combined_size_bytes: int,
 ) -> str:
     parts = [
-        "# Contexto Consolidado do Projeto",
+        "# Consolidated Project Context",
         "",
-        "## Estrutura",
+        "## Structure",
         "",
         "```text",
         generate_tree(root, spec, output_dir),
@@ -358,11 +358,11 @@ def build_project_context(
             relative_path = file.relative_to(root).as_posix()
             parts.extend([
                 "",
-                "## Limite atingido",
+                "## Limit Reached",
                 "",
                 (
-                    f"O arquivo `{relative_path}` e os próximos foram omitidos "
-                    "porque o limite consolidado foi atingido."
+                    f"The file `{relative_path}` and subsequent files were omitted "
+                    "because the consolidated limit was reached."
                 ),
                 "",
             ])
@@ -385,7 +385,7 @@ def build_project_context(
 
 
 def build_tree_markdown(root: Path, spec: pathspec.PathSpec, output_dir: Path) -> str:
-    return f"""# Estrutura do Projeto
+    return f"""# Project Structure
 
 ```text
 {generate_tree(root, spec, output_dir)}
@@ -398,13 +398,13 @@ def validate_export_config(config: ExportConfig) -> ExportConfig:
     output_dir = config.output_dir.resolve()
 
     if not root.exists():
-        raise FileNotFoundError(f"Pasta não encontrada: {root}")
+        raise FileNotFoundError(f"Folder not found: {root}")
 
     if not root.is_dir():
-        raise NotADirectoryError(f"O caminho informado não é uma pasta: {root}")
+        raise NotADirectoryError(f"The provided path is not a folder: {root}")
 
     if root == output_dir:
-        raise ValueError("A pasta de saída não pode ser igual à pasta de origem.")
+        raise ValueError("The output folder cannot be the same as the source folder.")
 
     return ExportConfig(
         root=root,
@@ -452,10 +452,10 @@ def positive_int(value: str) -> int:
     try:
         parsed_value = int(value)
     except ValueError as error:
-        raise argparse.ArgumentTypeError("deve ser um número inteiro") from error
+        raise argparse.ArgumentTypeError("must be an integer") from error
 
     if parsed_value <= 0:
-        raise argparse.ArgumentTypeError("deve ser maior que zero")
+        raise argparse.ArgumentTypeError("must be greater than zero")
 
     return parsed_value
 
@@ -463,39 +463,39 @@ def positive_int(value: str) -> int:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Exporta uma pasta para Markdown preservando estrutura, árvore, "
-            "resumo e contexto consolidado."
+            "Export a folder to Markdown while preserving structure, tree, "
+            "summary, and consolidated context."
         )
     )
 
-    parser.add_argument("folder", type=Path, help="Pasta que será analisada")
+    parser.add_argument("folder", type=Path, help="Folder to analyze")
 
     parser.add_argument(
         "-o",
         "--output",
         type=Path,
         default=Path("markdown_export"),
-        help="Pasta onde os arquivos .md serão criados",
+        help="Folder where .md files will be created",
     )
 
     parser.add_argument(
         "--max-file-size-mb",
         type=positive_int,
         default=DEFAULT_MAX_FILE_SIZE_MB,
-        help="Tamanho máximo de arquivo individual para incluir conteúdo bruto",
+        help="Maximum individual file size for including raw content",
     )
 
     parser.add_argument(
         "--max-combined-size-mb",
         type=positive_int,
         default=DEFAULT_MAX_COMBINED_SIZE_MB,
-        help="Tamanho máximo do PROJECT_CONTEXT.md consolidado",
+        help="Maximum size for the consolidated PROJECT_CONTEXT.md",
     )
 
     parser.add_argument(
         "--no-consolidated",
         action="store_true",
-        help="Não gera PROJECT_CONTEXT.md",
+        help="Do not generate PROJECT_CONTEXT.md",
     )
 
     return parser.parse_args(argv)
@@ -518,10 +518,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         export_directory_to_markdown(config)
     except (OSError, ValueError) as error:
-        print(f"Erro: {error}", file=sys.stderr)
+        print(f"Error: {error}", file=sys.stderr)
         return 1
 
-    print(f"Exportação concluída em: {config.output_dir.resolve()}")
+    print(f"Export completed at: {config.output_dir.resolve()}")
     return 0
 
 
