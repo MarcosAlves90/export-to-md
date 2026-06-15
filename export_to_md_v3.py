@@ -95,34 +95,46 @@ def collect_visible_paths(root: Path, spec):
 
     return paths
 
+def is_inside_output_dir(path: Path, output_dir: Path | None) -> bool:
+    if output_dir is None:
+        return False
+
+    resolved_path = path.resolve()
+    resolved_output_dir = output_dir.resolve()
+
+    return resolved_path == resolved_output_dir or resolved_output_dir in resolved_path.parents
+
+def get_visible_children(current: Path, root: Path, spec, output_dir: Path | None) -> list[Path]:
+    items = sorted(current.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+
+    return [
+        item
+        for item in items
+        if not is_inside_output_dir(item, output_dir) and not is_ignored(item, root, spec)
+    ]
+
+def append_tree_lines(
+    current: Path,
+    root: Path,
+    spec,
+    output_dir: Path | None,
+    lines: list[str],
+    prefix: str = "",
+) -> None:
+    visible = get_visible_children(current, root, spec, output_dir)
+
+    for index, item in enumerate(visible):
+        last = index == len(visible) - 1
+        connector = "└── " if last else "├── "
+        lines.append(prefix + connector + item.name)
+
+        if item.is_dir():
+            next_prefix = prefix + ("    " if last else "│   ")
+            append_tree_lines(item, root, spec, output_dir, lines, next_prefix)
+
 def generate_tree(root: Path, spec, output_dir: Path | None = None) -> str:
     lines = [f"{root.name}/"]
-
-    def walk(current: Path, prefix=""):
-        items = sorted(current.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
-
-        visible = []
-        for item in items:
-            if output_dir and item.resolve() == output_dir.resolve():
-                continue
-
-            if output_dir and output_dir.resolve() in item.resolve().parents:
-                continue
-
-            if is_ignored(item, root, spec):
-                continue
-
-            visible.append(item)
-
-        for i, item in enumerate(visible):
-            last = i == len(visible) - 1
-            connector = "└── " if last else "├── "
-            lines.append(prefix + connector + item.name)
-
-            if item.is_dir():
-                walk(item, prefix + ("    " if last else "│   "))
-
-    walk(root)
+    append_tree_lines(root, root, spec, output_dir, lines)
     return "\n".join(lines)
 
 def get_language_hint(path: Path) -> str:
@@ -201,7 +213,7 @@ Arquivo provavelmente binário. Conteúdo bruto omitido.
 
     output_file.write_text(metadata + body, encoding="utf-8")
 
-def build_summary(root: Path, files: list[Path]) -> str:
+def build_summary(files: list[Path]) -> str:
     total_files = len([f for f in files if f.is_file()])
     total_dirs = len([f for f in files if f.is_dir()])
     total_bytes = sum(f.stat().st_size for f in files if f.is_file())
@@ -318,7 +330,7 @@ def export_directory_to_markdown(
 """
 
     (output_dir / "TREE.md").write_text(tree_md, encoding="utf-8")
-    (output_dir / "SUMMARY.md").write_text(build_summary(root, visible_paths), encoding="utf-8")
+    (output_dir / "SUMMARY.md").write_text(build_summary(visible_paths), encoding="utf-8")
 
     max_file_size_bytes = max_file_size_mb * 1024 * 1024
     max_combined_size_bytes = max_combined_size_mb * 1024 * 1024
