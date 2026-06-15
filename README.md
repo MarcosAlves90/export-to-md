@@ -9,14 +9,14 @@ Export a source directory into Markdown files that are easier to inspect,
 archive, or paste into LLM workflows.
 
 The script walks a folder, respects `.gitignore`, skips `.git`, preserves the
-original tree, and writes both per-file Markdown documents and project-level
-summaries.
+original tree, and writes each export under `markdown_export/<folder-name>/`.
 
 ## Features
 
 - Respects `.gitignore` using `pathspec`
 - Excludes `.git` and the configured output directory
-- Preserves the source directory structure in the output folder
+- Writes output to `<output>/<source-folder-name>/`
+- Preserves the source directory structure inside the export folder
 - Creates one Markdown file per source file
 - Adds file metadata: relative path, size, estimated MIME type, and SHA-256
 - Detects likely binary files and omits raw binary content
@@ -39,13 +39,14 @@ flowchart TD
     A[Source folder] --> B[Load .gitignore]
     B --> C[Walk visible paths]
     C --> D[Skip .git and output folder]
-    D --> E[Write TREE.md]
-    D --> F[Write SUMMARY.md]
-    D --> G[Write per-file Markdown]
-    G --> H{Consolidated enabled?}
-    H -- yes --> I[Write PROJECT_CONTEXT.md]
-    H -- no --> J[Finish]
-    I --> J
+    D --> E[Create output/source-folder]
+    E --> F[Write TREE.md]
+    E --> G[Write SUMMARY.md]
+    E --> H[Write per-file Markdown]
+    H --> I{Consolidated enabled?}
+    I -- yes --> J[Write PROJECT_CONTEXT.md]
+    I -- no --> K[Finish]
+    J --> K
 ```
 
 ## Installation
@@ -60,13 +61,13 @@ python -m pip install -r requirements.txt
 
 ## Usage
 
-Export a folder into the default `markdown_export` directory:
+Export a folder into `markdown_export/<folder-name>/`:
 
 ```bash
 python export_to_md_v3.py /path/to/folder
 ```
 
-Choose an output folder:
+Choose a different base output folder:
 
 ```bash
 python export_to_md_v3.py /path/to/folder -o markdown_export
@@ -103,7 +104,7 @@ usage: export_to_md_v3.py [-h] [-o OUTPUT]
 | Argument | Default | Description |
 |---|---:|---|
 | `folder` | required | Source folder to analyze |
-| `-o, --output` | `markdown_export` | Folder where Markdown files are created |
+| `-o, --output` | `markdown_export` | Base folder where `<source-folder-name>/` is created |
 | `--max-file-size-mb` | `2` | Maximum individual file size for raw content |
 | `--max-combined-size-mb` | `10` | Maximum size for `PROJECT_CONTEXT.md` content |
 | `--no-consolidated` | `false` | Do not generate `PROJECT_CONTEXT.md` |
@@ -112,14 +113,15 @@ usage: export_to_md_v3.py [-h] [-o OUTPUT]
 
 ```text
 markdown_export/
-├── TREE.md
-├── SUMMARY.md
-├── PROJECT_CONTEXT.md
-├── README.md.md
-└── src/
-    ├── main.py.md
-    └── services/
-        └── user.py.md
+└── my-project/
+    ├── TREE.md
+    ├── SUMMARY.md
+    ├── PROJECT_CONTEXT.md
+    ├── README.md.md
+    └── src/
+        ├── main.py.md
+        └── services/
+            └── user.py.md
 ```
 
 ## Validation

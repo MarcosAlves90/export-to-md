@@ -64,6 +64,7 @@ LANGUAGE_ALIASES = {
 @dataclass(frozen=True)
 class ExportConfig:
     root: Path
+    output_base_dir: Path
     output_dir: Path
     max_file_size_bytes: int
     max_combined_size_bytes: int
@@ -395,7 +396,8 @@ def build_tree_markdown(root: Path, spec: pathspec.PathSpec, output_dir: Path) -
 
 def validate_export_config(config: ExportConfig) -> ExportConfig:
     root = config.root.resolve()
-    output_dir = config.output_dir.resolve()
+    output_base_dir = config.output_base_dir.resolve()
+    output_dir = (output_base_dir / (root.name or "root")).resolve()
 
     if not root.exists():
         raise FileNotFoundError(f"Folder not found: {root}")
@@ -403,11 +405,12 @@ def validate_export_config(config: ExportConfig) -> ExportConfig:
     if not root.is_dir():
         raise NotADirectoryError(f"The provided path is not a folder: {root}")
 
-    if root == output_dir:
+    if root == output_base_dir or root == output_dir:
         raise ValueError("The output folder cannot be the same as the source folder.")
 
     return ExportConfig(
         root=root,
+        output_base_dir=output_base_dir,
         output_dir=output_dir,
         max_file_size_bytes=config.max_file_size_bytes,
         max_combined_size_bytes=config.max_combined_size_bytes,
@@ -415,15 +418,15 @@ def validate_export_config(config: ExportConfig) -> ExportConfig:
     )
 
 
-def export_directory_to_markdown(config: ExportConfig) -> None:
+def export_directory_to_markdown(config: ExportConfig) -> Path:
     config = validate_export_config(config)
     config.output_dir.mkdir(parents=True, exist_ok=True)
 
     spec = load_gitignore(config.root)
-    visible_paths = collect_visible_paths(config.root, spec, config.output_dir)
+    visible_paths = collect_visible_paths(config.root, spec, config.output_base_dir)
 
     (config.output_dir / "TREE.md").write_text(
-        build_tree_markdown(config.root, spec, config.output_dir),
+        build_tree_markdown(config.root, spec, config.output_base_dir),
         encoding="utf-8",
     )
     (config.output_dir / "SUMMARY.md").write_text(
@@ -441,11 +444,13 @@ def export_directory_to_markdown(config: ExportConfig) -> None:
                 config.root,
                 visible_paths,
                 spec,
-                config.output_dir,
+                config.output_base_dir,
                 config.max_combined_size_bytes,
             ),
             encoding="utf-8",
         )
+
+    return config.output_dir
 
 
 def positive_int(value: str) -> int:
@@ -475,7 +480,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--output",
         type=Path,
         default=Path("markdown_export"),
-        help="Folder where .md files will be created",
+        help="Base folder where the source-named export folder will be created",
     )
 
     parser.add_argument(
@@ -504,6 +509,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def config_from_args(args: argparse.Namespace) -> ExportConfig:
     return ExportConfig(
         root=args.folder,
+        output_base_dir=args.output,
         output_dir=args.output,
         max_file_size_bytes=args.max_file_size_mb * BYTES_PER_MB,
         max_combined_size_bytes=args.max_combined_size_mb * BYTES_PER_MB,
@@ -516,12 +522,12 @@ def main(argv: list[str] | None = None) -> int:
     config = config_from_args(args)
 
     try:
-        export_directory_to_markdown(config)
+        output_dir = export_directory_to_markdown(config)
     except (OSError, ValueError) as error:
         print(f"Error: {error}", file=sys.stderr)
         return 1
 
-    print(f"Export completed at: {config.output_dir.resolve()}")
+    print(f"Export completed at: {output_dir}")
     return 0
 
 
