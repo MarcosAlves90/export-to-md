@@ -1,5 +1,6 @@
 # Export to Markdown
 
+[![CI](https://github.com/MarcosAlves90/export-to-md/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcosAlves90/export-to-md/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)
 ![CLI](https://img.shields.io/badge/interface-CLI-2E3440)
 ![Markdown](https://img.shields.io/badge/output-Markdown-000000?logo=markdown&logoColor=white)
@@ -126,12 +127,15 @@ markdown_export/
 
 ## Validation
 
-Run a syntax check and a small export:
+Run the test suite, a syntax check, and a small export:
 
 ```bash
+python -m unittest discover -v
 python -m py_compile export_to_md_v3.py
 python export_to_md_v3.py . -o /tmp/md-extractor-output --max-combined-size-mb 1
 ```
+
+See [docs/TESTING.md](docs/TESTING.md) for the test strategy and CI gate.
 
 ## Contributing
 

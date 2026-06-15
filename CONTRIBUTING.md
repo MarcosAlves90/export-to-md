@@ -63,6 +63,7 @@ Each pull request should include:
 Before opening a pull request, run:
 
 ```bash
+python -m unittest discover -v
 python -m py_compile export_to_md_v3.py
 ```
 

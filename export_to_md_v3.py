@@ -81,10 +81,10 @@ def load_gitignore(root: Path) -> pathspec.PathSpec:
     gitignore = root / ".gitignore"
 
     if not gitignore.exists():
-        return pathspec.PathSpec.from_lines("gitwildmatch", [])
+        return pathspec.PathSpec.from_lines("gitignore", [])
 
     lines = gitignore.read_text(encoding="utf-8", errors="ignore").splitlines()
-    return pathspec.PathSpec.from_lines("gitwildmatch", lines)
+    return pathspec.PathSpec.from_lines("gitignore", lines)
 
 
 def is_ignored(path: Path, root: Path, spec: pathspec.PathSpec) -> bool:
