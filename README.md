@@ -130,3 +130,7 @@ Run a syntax check and a small export:
 python -m py_compile export_to_md_v3.py
 python export_to_md_v3.py . -o /tmp/md-extractor-output --max-combined-size-mb 1
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Commits must use Conventional Commits.
