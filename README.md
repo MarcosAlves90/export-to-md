@@ -1,4 +1,4 @@
-# Export to Markdown
+# md-extractor
 
 [![CI](https://github.com/MarcosAlves90/export-to-md/actions/workflows/ci.yml/badge.svg)](https://github.com/MarcosAlves90/export-to-md/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)
@@ -7,10 +7,9 @@
 ![Dependency](https://img.shields.io/badge/dependency-pathspec-4B8BBE)
 
 Export a source directory into Markdown files that are easier to inspect,
-archive, or paste into LLM workflows.
-
-The script walks a folder, respects `.gitignore`, skips `.git`, preserves the
-original tree, and writes each export under `markdown_export/<folder-name>/`.
+archive, or paste into LLM workflows. The CLI respects `.gitignore`, skips
+`.git`, preserves the original tree, and writes each export under
+`markdown_export/<folder-name>/`.
 
 ## Features
 
@@ -33,31 +32,34 @@ original tree, and writes each export under `markdown_export/<folder-name>/`.
 | `PROJECT_CONTEXT.md` | Consolidated text context for LLM review |
 | `<source-file>.md` | Metadata and content for each exported source file |
 
-## How It Works
-
-```mermaid
-flowchart TD
-    A[Source folder] --> B[Load .gitignore]
-    B --> C[Walk visible paths]
-    C --> D[Skip .git and output folder]
-    D --> E[Create output/source-folder]
-    E --> F[Write TREE.md]
-    E --> G[Write SUMMARY.md]
-    E --> H[Write per-file Markdown]
-    H --> I{Consolidated enabled?}
-    I -- yes --> J[Write PROJECT_CONTEXT.md]
-    I -- no --> K[Finish]
-    J --> K
-```
-
 ## Installation
 
-Create a virtual environment and install the only runtime dependency:
+Install from a local checkout:
+
+```bash
+python3 -m pip install .
+```
+
+Install directly from GitHub:
+
+```bash
+python3 -m pip install "git+https://github.com/MarcosAlves90/export-to-md.git"
+```
+
+If you prefer an isolated global install from a local checkout, `pipx` also works:
+
+```bash
+pipx install .
+```
+
+For development setup details, see [docs/SETUP.md](docs/SETUP.md).
+
+For local development, use:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -r requirements.txt
+python -m pip install -e .
 ```
 
 ## Usage
@@ -65,41 +67,41 @@ python -m pip install -r requirements.txt
 Export a folder into `markdown_export/<folder-name>/`:
 
 ```bash
-python export_to_md_v3.py /path/to/folder
+md-extractor /path/to/folder
 ```
 
 Choose a different base output folder:
 
 ```bash
-python export_to_md_v3.py /path/to/folder -o markdown_export
+md-extractor /path/to/folder -o markdown_export
 ```
 
 Increase the per-file raw content limit:
 
 ```bash
-python export_to_md_v3.py /path/to/folder --max-file-size-mb 5
+md-extractor /path/to/folder --max-file-size-mb 5
 ```
 
 Increase the consolidated context limit:
 
 ```bash
-python export_to_md_v3.py /path/to/folder --max-combined-size-mb 20
+md-extractor /path/to/folder --max-combined-size-mb 20
 ```
 
 Skip `PROJECT_CONTEXT.md`:
 
 ```bash
-python export_to_md_v3.py /path/to/folder --no-consolidated
+md-extractor /path/to/folder --no-consolidated
 ```
 
 ## CLI Reference
 
 ```text
-usage: export_to_md_v3.py [-h] [-o OUTPUT]
-                          [--max-file-size-mb MAX_FILE_SIZE_MB]
-                          [--max-combined-size-mb MAX_COMBINED_SIZE_MB]
-                          [--no-consolidated]
-                          folder
+usage: md-extractor [-h] [-o OUTPUT]
+                    [--max-file-size-mb MAX_FILE_SIZE_MB]
+                    [--max-combined-size-mb MAX_COMBINED_SIZE_MB]
+                    [--no-consolidated]
+                    folder
 ```
 
 | Argument | Default | Description |
@@ -127,15 +129,16 @@ markdown_export/
 
 ## Validation
 
-Run the test suite, a syntax check, and a small export:
+Verified commands:
 
 ```bash
-python -m unittest discover -v
-python -m py_compile export_to_md_v3.py
-python export_to_md_v3.py . -o /tmp/md-extractor-output --max-combined-size-mb 1
+./.venv/bin/python -m unittest discover -v
+./.venv/bin/python -m py_compile export_to_md_v3.py md_extractor/cli.py md_extractor/__main__.py
+./.venv/bin/python -m md_extractor . -o /private/tmp/md-extractor-output-2 --max-combined-size-mb 1
 ```
 
-See [docs/TESTING.md](docs/TESTING.md) for the test strategy and CI gate.
+See [docs/SETUP.md](docs/SETUP.md), [docs/TESTING.md](docs/TESTING.md), and
+[CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 

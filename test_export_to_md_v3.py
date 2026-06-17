@@ -5,12 +5,17 @@ from io import StringIO
 from pathlib import Path
 
 from export_to_md_v3 import main
+from md_extractor.cli import main as packaged_main
 
 
 class ExportToMarkdownTests(unittest.TestCase):
     def run_cli(self, args: list[str]) -> int:
         with redirect_stdout(StringIO()):
             return main(args)
+
+    def run_packaged_cli(self, args: list[str]) -> int:
+        with redirect_stdout(StringIO()):
+            return packaged_main(args)
 
     def test_exports_into_source_named_folder(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -87,6 +92,18 @@ class ExportToMarkdownTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertIn("File omitted because it exceeds the configured limit", output)
+
+    def test_packaged_entrypoint_matches_existing_behavior(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            source = workspace / "sample-project"
+            source.mkdir()
+            (source / "README.md").write_text("# Sample\n", encoding="utf-8")
+
+            exit_code = self.run_packaged_cli([str(source), "-o", str(workspace / "out")])
+
+            self.assertEqual(exit_code, 0)
+            self.assertTrue((workspace / "out" / "sample-project" / "README.md.md").exists())
 
 
 if __name__ == "__main__":

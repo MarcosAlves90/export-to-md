@@ -64,11 +64,11 @@ Before opening a pull request, run:
 
 ```bash
 python -m unittest discover -v
-python -m py_compile export_to_md_v3.py
+python -m py_compile export_to_md_v3.py md_extractor/cli.py md_extractor/__main__.py
 ```
 
-If dependencies are installed, also run a small export:
+If the package is installed, also run a small export:
 
 ```bash
-python export_to_md_v3.py . -o /tmp/md-extractor-output --max-combined-size-mb 1
+md-extractor . -o /tmp/md-extractor-output --max-combined-size-mb 1
 ```

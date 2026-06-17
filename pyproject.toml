@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "md-extractor"
+version = "1.0.0"
+description = "Export source directories into Markdown for inspection, archiving, and LLM workflows."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pathspec>=0.12.1",
+]
+
+[project.scripts]
+md-extractor = "md_extractor.cli:main"
+
+[tool.setuptools]
+packages = ["md_extractor"]

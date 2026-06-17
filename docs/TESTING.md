@@ -26,7 +26,7 @@ python -m unittest discover -v
 Run the syntax check:
 
 ```bash
-python -m py_compile export_to_md_v3.py
+python -m py_compile export_to_md_v3.py md_extractor/cli.py md_extractor/__main__.py
 ```
 
 ## CI Policy
