@@ -17,7 +17,7 @@ class ExportToMarkdownTests(unittest.TestCase):
         with redirect_stdout(StringIO()):
             return packaged_main(args)
 
-    def test_exports_into_source_named_folder(self) -> None:
+    def test_exports_into_output_folder(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Path(temp_dir)
             source = workspace / "sample-project"
@@ -29,7 +29,7 @@ class ExportToMarkdownTests(unittest.TestCase):
             exit_code = self.run_cli([str(source), "-o", str(output_base)])
 
             self.assertEqual(exit_code, 0)
-            export_dir = output_base / "sample-project"
+            export_dir = output_base
             self.assertTrue((export_dir / "TREE.md").exists())
             self.assertTrue((export_dir / "SUMMARY.md").exists())
             self.assertTrue((export_dir / "PROJECT_CONTEXT.md").exists())
@@ -44,14 +44,13 @@ class ExportToMarkdownTests(unittest.TestCase):
             (source / "included.txt").write_text("included\n", encoding="utf-8")
             (source / "ignored.txt").write_text("ignored\n", encoding="utf-8")
             output_base = source / "markdown_export"
-            previous_export = output_base / "sample-project"
-            previous_export.mkdir(parents=True)
-            (previous_export / "stale.txt").write_text("stale\n", encoding="utf-8")
+            output_base.mkdir(parents=True)
+            (output_base / "stale.txt").write_text("stale\n", encoding="utf-8")
 
             exit_code = self.run_cli([str(source), "-o", str(output_base)])
 
             self.assertEqual(exit_code, 0)
-            export_dir = output_base / "sample-project"
+            export_dir = output_base
             tree = (export_dir / "TREE.md").read_text(encoding="utf-8")
             self.assertIn("included.txt", tree)
             self.assertNotIn("ignored.txt", tree)
@@ -67,7 +66,7 @@ class ExportToMarkdownTests(unittest.TestCase):
             exit_code = self.run_cli([str(source), "-o", str(workspace / "out")])
 
             self.assertEqual(exit_code, 0)
-            output = (workspace / "out" / "sample-project" / "image.png.md").read_text(
+            output = (workspace / "out" / "image.png.md").read_text(
                 encoding="utf-8",
             )
             self.assertIn("File is probably binary. Raw content omitted.", output)
@@ -88,7 +87,7 @@ class ExportToMarkdownTests(unittest.TestCase):
             ])
 
             self.assertEqual(exit_code, 0)
-            output = (workspace / "out" / "sample-project" / "large.txt.md").read_text(
+            output = (workspace / "out" / "large.txt.md").read_text(
                 encoding="utf-8",
             )
             self.assertIn("File omitted because it exceeds the configured limit", output)
@@ -103,7 +102,7 @@ class ExportToMarkdownTests(unittest.TestCase):
             exit_code = self.run_packaged_cli([str(source), "-o", str(workspace / "out")])
 
             self.assertEqual(exit_code, 0)
-            self.assertTrue((workspace / "out" / "sample-project" / "README.md.md").exists())
+            self.assertTrue((workspace / "out" / "README.md.md").exists())
 
 
 if __name__ == "__main__":

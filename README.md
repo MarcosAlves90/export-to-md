@@ -9,13 +9,13 @@
 Export a source directory into Markdown files that are easier to inspect,
 archive, or paste into LLM workflows. The CLI respects `.gitignore`, skips
 `.git`, preserves the original tree, and writes each export under
-`markdown_export/<folder-name>/`.
+`markdown_export/`.
 
 ## Features
 
 - Respects `.gitignore` using `pathspec`
 - Excludes `.git` and the configured output directory
-- Writes output to `<output>/<source-folder-name>/`
+- Writes output directly to the configured output folder
 - Preserves the source directory structure inside the export folder
 - Creates one Markdown file per source file
 - Adds file metadata: relative path, size, estimated MIME type, and SHA-256
@@ -62,9 +62,29 @@ source .venv/bin/activate
 python -m pip install -e .
 ```
 
+## Updating
+
+If you installed with `pipx` from GitHub:
+
+```bash
+pipx upgrade md-extractor
+```
+
+If you installed directly with `pip` from GitHub, reinstall from the repo URL:
+
+```bash
+python3 -m pip install --upgrade "git+https://github.com/MarcosAlves90/export-to-md.git"
+```
+
+If you installed from a local checkout after pulling new changes, reinstall from the repository root:
+
+```bash
+python3 -m pip install --upgrade .
+```
+
 ## Usage
 
-Export a folder into `markdown_export/<folder-name>/`:
+Export a folder into `markdown_export/`:
 
 ```bash
 md-extractor /path/to/folder
@@ -107,7 +127,7 @@ usage: md-extractor [-h] [-o OUTPUT]
 | Argument | Default | Description |
 |---|---:|---|
 | `folder` | required | Source folder to analyze |
-| `-o, --output` | `markdown_export` | Base folder where `<source-folder-name>/` is created |
+| `-o, --output` | `markdown_export` | Folder where the Markdown export is created |
 | `--max-file-size-mb` | `2` | Maximum individual file size for raw content |
 | `--max-combined-size-mb` | `10` | Maximum size for `PROJECT_CONTEXT.md` content |
 | `--no-consolidated` | `false` | Do not generate `PROJECT_CONTEXT.md` |
@@ -116,15 +136,14 @@ usage: md-extractor [-h] [-o OUTPUT]
 
 ```text
 markdown_export/
-└── my-project/
-    ├── TREE.md
-    ├── SUMMARY.md
-    ├── PROJECT_CONTEXT.md
-    ├── README.md.md
-    └── src/
-        ├── main.py.md
-        └── services/
-            └── user.py.md
+├── TREE.md
+├── SUMMARY.md
+├── PROJECT_CONTEXT.md
+├── README.md.md
+└── src/
+    ├── main.py.md
+    └── services/
+        └── user.py.md
 ```
 
 ## Validation

@@ -6,6 +6,9 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+### Changed
+- Export output now writes directly into the configured output folder instead of creating a nested source-name directory.
+
 ## [1.0.0] - 2026-06-17
 ### Added
 - Python packaging via `pyproject.toml`.

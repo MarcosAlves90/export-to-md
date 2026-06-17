@@ -397,7 +397,7 @@ def build_tree_markdown(root: Path, spec: pathspec.PathSpec, output_dir: Path) -
 def validate_export_config(config: ExportConfig) -> ExportConfig:
     root = config.root.resolve()
     output_base_dir = config.output_base_dir.resolve()
-    output_dir = (output_base_dir / (root.name or "root")).resolve()
+    output_dir = output_base_dir
 
     if not root.exists():
         raise FileNotFoundError(f"Folder not found: {root}")
@@ -480,7 +480,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--output",
         type=Path,
         default=Path("markdown_export"),
-        help="Base folder where the source-named export folder will be created",
+        help="Folder where the Markdown export will be created",
     )
 
     parser.add_argument(
