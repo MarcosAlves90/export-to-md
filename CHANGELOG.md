@@ -6,8 +6,11 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-06-17
 ### Changed
 - Export output now writes directly into the configured output folder instead of creating a nested source-name directory.
+- Added README instructions for updating installed packages.
+
 
 ## [1.0.0] - 2026-06-17
 ### Added
